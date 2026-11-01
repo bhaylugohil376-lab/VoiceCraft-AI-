@@ -7,7 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Load the shared section adapter registry on pages using the common site script.
-  if (!window.VoiceCraft AIAdapters && !document.querySelector('script[data-voiceai-adapters]')) {
+  if (!window.VoiceCraftAIAdapters && !document.querySelector('script[data-voiceai-adapters]')) {
     const adapterScript = document.createElement("script");
     adapterScript.src = new URL("./adapters/registry.js", document.currentScript?.src || window.location.href).href;
     adapterScript.dataset.voiceaiAdapters = "true";
