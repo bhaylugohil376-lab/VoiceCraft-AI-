@@ -1,0 +1,93 @@
+import { getSupabaseAdmin } from "./_lib/supabase.js";
+import { sendError } from "./_lib/response.js";
+
+export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return sendError(res, 405, "Method not allowed");
+  }
+  try {
+    const source = typeof req.query?.source === "string" ? req.query.source.toLowerCase() : "library";
+    if (source === "ttsai") {
+      const params = new URLSearchParams({ model: typeof req.query?.model === "string" ? req.query.model : "kokoro" });
+      const language = typeof req.query?.language === "string" ? req.query.language : "";
+      if (["hi", "gu", "en"].includes(language)) params.set("language", language);
+      const page = typeof req.query?.page === "string" ? req.query.page : "";
+      const nextToken = typeof req.query?.next_page_token === "string" ? req.query.next_page_token : "";
+      if (/^\d{1,5}$/.test(page)) params.set("page", page);
+      if (nextToken) params.set("next_page_token", nextToken);
+      const headers = { Accept: "application/json" };
+      const ttsKey = process.env.TTS_AI_API_KEY;
+      if (ttsKey) headers.Authorization = "Bearer " + ttsKey;
+      try {
+        const response = await fetch("https://api.tts.ai/v1/voices/?" + params.toString(), { headers, signal: AbortSignal.timeout(20000) });
+        let data = await response.json();
+        if (!response.ok) return sendError(res, response.status === 429 ? 429 : 502, "Free TTS voice list unavailable. Check provider access.");
+        let list = Array.isArray(data.voices) ? data.voices : [];
+        if (!list.length && language) {
+          const fallbackParams = new URLSearchParams({ model: params.get("model") || "kokoro" });
+          const fallback = await fetch("https://api.tts.ai/v1/voices/?" + fallbackParams.toString(), { headers, signal: AbortSignal.timeout(20000) });
+          const fallbackData = await fallback.json().catch(() => ({}));
+          if (fallback.ok && Array.isArray(fallbackData.voices)) {
+            data = fallbackData;
+            list = fallbackData.voices;
+          }
+        }
+        const voices = list.map(v => ({ voice_id: String(v.id || v.voice_id || ""), name: String(v.name || v.id || "Voice"), category: v.model || params.get("model") || "kokoro", description: v.language || "", labels: { language: v.language || "", gender: v.gender || "" }, preview_url: v.preview_url || "", provider: "ttsai", model_id: v.model || params.get("model") || "kokoro" })).filter(v => v.voice_id);
+        return res.status(200).json({ success: true, source, voices, count: voices.length, total_count: data.total_count ?? data.total ?? null, has_more: Boolean(data.has_more), next_page_token: data.next_page_token || null });
+      } catch {
+        return sendError(res, 502, "Could not connect to free TTS voice provider.");
+      }
+    }
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) return sendError(res, 500, "ELEVENLABS_API_KEY is not configured.");
+
+    const params = new URLSearchParams();
+    params.set("page_size", "100");
+    params.set("include_total_count", "true");
+    const token = typeof req.query?.next_page_token === "string" ? req.query.next_page_token.trim() : "";
+    const search = typeof req.query?.search === "string" ? req.query.search.trim().slice(0, 100) : "";
+    if (token) params.set("next_page_token", token);
+    if (search) params.set("search", search);
+
+    const response = await fetch("https://api.elevenlabs.io/v2/voices?" + params.toString(), {
+      method: "GET",
+      headers: { "xi-api-key": apiKey, Accept: "application/json" },
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!response.ok) {
+      const details = await response.text();
+      console.error("ElevenLabs voices error:", response.status, details.slice(0, 1000));
+      return sendError(res, response.status === 429 ? 429 : 502, response.status === 429 ? "ElevenLabs rate limit or quota reached." : "Unable to retrieve voices from ElevenLabs.");
+    }
+
+    const data = await response.json();
+    const voices = Array.isArray(data.voices) ? data.voices : [];
+    try {
+      const admin = getSupabaseAdmin();
+      const rows = voices.filter(v => typeof v.voice_id === "string" && v.voice_id && typeof v.name === "string" && v.name).map(v => {
+        const labels = v.labels && typeof v.labels === "object" ? v.labels : {};
+        const rawGender = String(labels.gender || "").toLowerCase();
+        const gender = ["male", "female", "neutral"].includes(rawGender) ? rawGender : null;
+        return { provider: "elevenlabs", provider_voice_id: v.voice_id, name: v.name, gender, language: labels.language || null, accent: labels.accent || null, category: v.category || null, description: v.description || null, preview_url: v.preview_url || null, is_active: true, metadata: labels };
+      });
+      if (rows.length) {
+        const { error: syncError } = await admin.from("voices").upsert(rows, { onConflict: "provider_voice_id" });
+        if (syncError) console.error("Voice metadata sync warning:", syncError.message);
+      }
+    } catch (syncError) {
+      console.warn("Supabase voice metadata sync skipped:", syncError?.message || syncError);
+    }
+    return res.status(200).json({
+      success: true,
+      voices: voices.map(v => ({ voice_id: v.voice_id, name: v.name, category: v.category || "", description: v.description || "", labels: v.labels || {}, preview_url: v.preview_url || "" })),
+      count: voices.length,
+      total_count: data.total_count ?? null,
+      has_more: Boolean(data.has_more),
+      next_page_token: data.next_page_token || null
+    });
+  } catch (error) {
+    console.error("Voices endpoint error:", error?.message || error);
+    return sendError(res, 500, "Failed to load voices. Please try again.");
+  }
+}
