@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bhaylugohil376-lab.github.io/VoiceCraft-AI-/sitemap.xml
