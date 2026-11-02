@@ -17,7 +17,7 @@
     ["captions","Captions","/api/captions","POST","openai-or-elevenlabs"],
     ["music-generation","Music Generation","/api/music","POST","music-provider"],
     ["sound-effects","Sound Effects","/api/sound-effects","POST","elevenlabs"],
-    ["image-generation","Image Generation","/api/image","POST","image-provider"],
+    ["image-generation","Image Generation","/api/image/generate","POST","image-provider"],
     ["ai-assistant","AI Assistant","/api/assistant","POST","llm-provider"],
     ["dialogue","Dialogue","/api/dialogue","POST","llm-provider"],
     ["ai-agents","AI Agents","/api/agents","POST","llm-provider"],
