@@ -296,3 +296,6 @@ button:disabled,.button[aria-disabled="true"]{opacity:.55;cursor:not-allowed;tra
   th,td{padding:10px}
   .footer{align-items:flex-start}
 }
+
+/* Temporary account pause: hide login/signup navigation until account features are re-enabled. */
+a[href*="login.html"], a[href*="signup.html"], a[href*="forgot-password.html"], a.nav-login { display: none !important; }
