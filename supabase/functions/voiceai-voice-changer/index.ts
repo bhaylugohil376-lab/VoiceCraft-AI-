@@ -34,8 +34,8 @@ Deno.serve(async (request: Request) => {
   const headers = { Authorization: "Bearer " + workerToken };
 
   try {
-    if (action === "voices" && request.method === "GET") {
-      const response = await fetch(workerUrl + "/voices", { headers });
+    if ((action === "voices" || action === "health") && request.method === "GET") {
+      const response = await fetch(workerUrl + (action === "health" ? "/health" : "/voices"), { headers });
       const body = await response.text();
       return new Response(body, {
         status: response.status,
