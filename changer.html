@@ -16,7 +16,7 @@
 <h1>Voice Changer</h1>
 <p class="vc-intro">Upload an audio clip or record directly here. Your original audio can be previewed locally in this browser. Free audio-to-audio conversion will be enabled after a compatible conversion engine and voice models are connected and tested.</p>
 <section class="vc-card">
-<div class="vc-status" role="status"><strong>Conversion engine not connected yet.</strong><br>Upload and recording controls are ready, but Convert is intentionally disabled. No ElevenLabs dependency and no fake conversion result.</div>
+<div class="vc-status" id="vc-engine-status" role="status"><strong>Checking free CPU conversion engine…</strong><br>Convert will unlock only after a real server and compatible voice model are available.</div>
 <div class="vc-grid" style="margin-top:18px">
 <div class="vc-drop">
 <div><strong>Upload audio</strong><p class="vc-muted">Choose an audio file (maximum 20 MB)</p><input id="vc-file" type="file" accept="audio/*"></div>
@@ -30,12 +30,13 @@
 <audio class="vc-audio" id="vc-source" controls></audio>
 <div class="vc-actions"><button class="secondary-btn" id="vc-clear" type="button">Remove audio</button></div>
 </div>
+<div id="vc-output-wrap" hidden class="vc-field"><p><strong>Converted audio</strong></p><audio class="vc-audio" id="vc-output" controls></audio><p><a class="primary-btn" id="vc-download" download="voicecraft-converted.wav">Download converted audio</a></p></div>
 <div class="vc-grid vc-field">
 <div><label for="vc-language">Target voice language</label><select id="vc-language"><option value="">Choose language</option><option value="hi">Hindi</option><option value="gu">Gujarati</option><option value="en-IN">English (India)</option></select></div>
-<div><label for="vc-model">Target voice</label><select id="vc-model" disabled><option>Voice models will appear after engine setup</option></select></div>
+<div><label for="vc-model">Target voice</label><select id="vc-model" disabled><option value="">Connect a CPU engine to load voices</option></select></div>
 </div>
 <p class="vc-muted vc-field">Only compatible, tested voice models will be listed here. British voices and unavailable models will not be shown as working choices.</p>
-<div class="vc-actions"><button class="primary-btn vc-disabled" type="button" disabled aria-disabled="true">Convert voice — engine not ready</button><a class="secondary-btn" href="./tts.html">Open Free Text to Speech</a></div>
+<div class="vc-actions"><button class="primary-btn vc-disabled" id="vc-convert" type="button" disabled aria-disabled="true">Convert voice</button><a class="secondary-btn" href="./tts.html">Open Free Text to Speech</a></div>
 <p class="vc-small">The selected audio is previewed in your browser. It is not uploaded or sent to a server by this page.</p>
 </section>
 </main>
@@ -49,10 +50,63 @@
   const recordButton = document.getElementById("vc-record");
   const stopButton = document.getElementById("vc-stop");
   const recordState = document.getElementById("vc-record-state");
+  const engineStatus = document.getElementById("vc-engine-status");
+  const languageSelect = document.getElementById("vc-language");
+  const modelSelect = document.getElementById("vc-model");
+  const convertButton = document.getElementById("vc-convert");
+  const outputWrap = document.getElementById("vc-output-wrap");
+  const outputAudio = document.getElementById("vc-output");
+  const downloadLink = document.getElementById("vc-download");
   let objectUrl = "";
+  let outputUrl = "";
   let stream = null;
   let recorder = null;
   let chunks = [];
+  let selectedAudio = null;
+  let availableVoices = [];
+
+  function refreshConvertButton() {
+    const enabled = Boolean(selectedAudio && modelSelect.value);
+    convertButton.disabled = !enabled;
+    convertButton.classList.toggle("vc-disabled", !enabled);
+    convertButton.setAttribute("aria-disabled", String(!enabled));
+  }
+
+  function populateVoices() {
+    const language = languageSelect.value;
+    const matches = availableVoices.filter(voice => !language || voice.language === language);
+    modelSelect.innerHTML = '<option value="">Choose a compatible voice</option>';
+    matches.forEach(voice => {
+      const option = document.createElement("option");
+      option.value = voice.id;
+      option.textContent = voice.name;
+      modelSelect.appendChild(option);
+    });
+    modelSelect.disabled = matches.length === 0;
+    if (!matches.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No tested models available for this language";
+      modelSelect.appendChild(option);
+    }
+    refreshConvertButton();
+  }
+
+  async function checkEngine() {
+    try {
+      const healthResponse = await fetch("/api/voice-changer?action=health", { headers: { Accept: "application/json" } });
+      const health = await healthResponse.json();
+      if (!healthResponse.ok || !health.ok) throw new Error(health.error || "CPU worker or voice models are not ready.");
+      const voicesResponse = await fetch("/api/voice-changer?action=voices", { headers: { Accept: "application/json" } });
+      const voices = await voicesResponse.json();
+      if (!voicesResponse.ok || !Array.isArray(voices) || voices.length === 0) throw new Error("No compatible voice models are installed yet.");
+      availableVoices = voices;
+      populateVoices();
+      engineStatus.innerHTML = "<strong>Free CPU engine connected.</strong><br>" + voices.length + " configured voice model(s) available. Upload a short clip to test conversion.";
+    } catch (error) {
+      engineStatus.innerHTML = "<strong>CPU engine not ready.</strong><br>" + (error.message || "The conversion server is not configured. Upload and local preview remain available.");
+    }
+  }
 
   function showAudio(file) {
     if (!file || !file.type.startsWith("audio/")) {
@@ -67,10 +121,46 @@
     objectUrl = URL.createObjectURL(file);
     source.src = objectUrl;
     fileName.textContent = "— " + file.name;
+    selectedAudio = file;
     sourceWrap.hidden = false;
+    outputWrap.hidden = true;
+    refreshConvertButton();
   }
 
   fileInput.addEventListener("change", () => showAudio(fileInput.files && fileInput.files[0]));
+  languageSelect.addEventListener("change", populateVoices);
+  modelSelect.addEventListener("change", refreshConvertButton);
+
+  convertButton.addEventListener("click", async () => {
+    if (!selectedAudio || !modelSelect.value) return;
+    convertButton.disabled = true;
+    convertButton.textContent = "Converting on CPU…";
+    engineStatus.textContent = "Converting your audio. CPU processing may take several minutes.";
+    try {
+      const form = new FormData();
+      form.append("model_id", modelSelect.value);
+      form.append("audio", selectedAudio, selectedAudio.name || "recording.wav");
+      const response = await fetch("/api/voice-changer?action=convert", { method: "POST", body: form });
+      if (!response.ok) {
+        let detail = "Conversion failed (" + response.status + ").";
+        try { const data = await response.json(); detail = data.error || data.detail || detail; } catch (_) {}
+        throw new Error(detail);
+      }
+      const blob = await response.blob();
+      if (!blob.size || !blob.type.startsWith("audio/")) throw new Error("The engine returned an invalid audio file.");
+      if (outputUrl) URL.revokeObjectURL(outputUrl);
+      outputUrl = URL.createObjectURL(blob);
+      outputAudio.src = outputUrl;
+      downloadLink.href = outputUrl;
+      outputWrap.hidden = false;
+      engineStatus.textContent = "Conversion complete. Listen to the result before downloading.";
+    } catch (error) {
+      engineStatus.textContent = error.message || "Conversion failed. Check the CPU worker logs.";
+    } finally {
+      convertButton.textContent = "Convert voice";
+      refreshConvertButton();
+    }
+  });
 
   recordButton.addEventListener("click", async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
@@ -119,12 +209,17 @@
     objectUrl = "";
     fileInput.value = "";
     sourceWrap.hidden = true;
+    selectedAudio = null;
+    outputWrap.hidden = true;
     fileName.textContent = "";
     recordState.textContent = "Audio removed.";
+    refreshConvertButton();
   });
 
+  checkEngine();
   window.addEventListener("beforeunload", () => {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
+    if (outputUrl) URL.revokeObjectURL(outputUrl);
     if (stream) stream.getTracks().forEach(track => track.stop());
   });
 })();
