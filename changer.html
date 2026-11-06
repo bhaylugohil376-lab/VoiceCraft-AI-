@@ -104,7 +104,7 @@
       populateVoices();
       engineStatus.innerHTML = "<strong>Free CPU engine connected.</strong><br>" + voices.length + " configured voice model(s) available. Upload a short clip to test conversion.";
     } catch (error) {
-      engineStatus.innerHTML = "<strong>CPU engine not ready.</strong><br>" + (error.message || "The conversion server is not configured. Upload and local preview remain available.");
+      engineStatus.textContent = "CPU engine not ready. " + (error.message || "The conversion server is not configured. Upload and local preview remain available.");
     }
   }
 
