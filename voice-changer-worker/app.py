@@ -17,6 +17,8 @@ from starlette.background import BackgroundTask
 
 APP_DIR = Path(__file__).resolve().parent
 APPLIO_ROOT = Path(os.environ.get("APPLIO_ROOT", "/opt/Applio")).resolve()
+# Applio may use a separate virtual environment with its own ML dependencies.
+APPLIO_PYTHON = Path(os.environ.get("APPLIO_PYTHON", sys.executable)).expanduser().resolve()
 MODELS_DIR = Path(os.environ.get("VOICE_MODELS_DIR", str(APPLIO_ROOT / "logs"))).resolve()
 MODELS_FILE = Path(os.environ.get("VOICE_MODELS_JSON", str(APP_DIR / "models.json")))
 WORKER_TOKEN = os.environ.get("VOICE_WORKER_TOKEN", "")
@@ -68,6 +70,8 @@ def applio_cli() -> Path:
     cli = APPLIO_ROOT / "core.py"
     if not cli.is_file():
         raise HTTPException(status_code=503, detail="Applio is not installed at APPLIO_ROOT.")
+    if not APPLIO_PYTHON.is_file():
+        raise HTTPException(status_code=503, detail="APPLIO_PYTHON does not point to a Python executable.")
     return cli
 
 
@@ -156,7 +160,7 @@ def convert(
 
         cli = applio_cli()
         command = [
-            sys.executable, str(cli), "infer",
+            str(APPLIO_PYTHON), str(cli), "infer",
             "--input-path", str(input_path),
             "--output-path", str(output_path),
             "--pth-path", str(pth),
