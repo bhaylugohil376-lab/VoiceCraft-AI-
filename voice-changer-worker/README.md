@@ -55,6 +55,15 @@ Set a strong secret outside source control and terminate TLS with a reverse prox
 
 Conversion is serialized to avoid concurrent CPU/RAM overload. Default timeout is 900 seconds; configure `CONVERSION_TIMEOUT_SECONDS` and `MAX_UPLOAD_BYTES` as needed.
 
+## Connect through the Supabase Edge Function proxy
+
+The website routes `/api/voice-changer` to `voiceai-voice-changer`. After the worker is deployed behind HTTPS, set these two Supabase Edge Function secrets in the project dashboard (Edge Functions → Secrets):
+
+- `VOICE_CHANGER_WORKER_URL` — the worker base URL, for example `https://your-worker.example.com` (no trailing slash).
+- `VOICE_CHANGER_WORKER_TOKEN` — exactly the same long random secret configured as `VOICE_WORKER_TOKEN` on the worker host.
+
+Then deploy the repository function at `supabase/functions/voiceai-voice-changer/index.ts` to the Supabase project. The secret is kept server-side; do not put it in browser JavaScript or commit it to Git.
+
 ## Not yet production-connected
 
 This worker is a deployable integration scaffold, not a claim that the VoiceCraft website is already connected. Before enabling the Convert button, deploy it on a server, install Applio in that server's Python environment, add and verify compatible voice models, configure HTTPS/CORS/token handling, and run an end-to-end conversion. Do not place the bearer token in browser JavaScript; route requests through a protected server-side proxy or short-lived authenticated session.
