@@ -1,0 +1,8 @@
+{
+  "replace-with-your-own-model-id": {
+    "name": "Your permitted Hindi voice model",
+    "language": "hi",
+    "pth": "YourModel/YourModel.pth",
+    "index": "YourModel/YourModel.index"
+  }
+}
