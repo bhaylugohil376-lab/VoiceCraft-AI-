@@ -24,7 +24,7 @@ cd /opt/Applio
 bash run-install.sh
 ```
 
-Complete the installation and verify `python core.py infer --help` in Applio's own Python environment. If Applio uses a virtual environment, set `PYTHON_BIN` to that environment's Python and use it to launch this API too.
+Complete the installation and verify `python core.py infer --help` in Applio's own Python environment. If Applio uses a virtual environment, set `APPLIO_PYTHON` to that environment's Python executable. The API can run in a separate virtual environment; inference will still use Applio's Python and ML dependencies.
 
 ## Configure permitted inference models
 
@@ -38,6 +38,7 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 export APPLIO_ROOT=/opt/Applio
+export APPLIO_PYTHON=/opt/Applio/env/bin/python
 export VOICE_MODELS_DIR=/opt/Applio/logs
 export VOICE_MODELS_JSON=$PWD/models.json
 export VOICE_WORKER_TOKEN='use-a-long-random-secret'
